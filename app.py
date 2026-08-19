@@ -1,117 +1,125 @@
 import streamlit as st
 
-st.set_page_config(
-    page_title="Blackjack Analyzer",
-    page_icon="🃏",
-    layout="centered"
-)
+# Configuración de la página
+st.set_page_config(page_title="Blackjack Pro Analyzer", page_icon="🃏", layout="centered")
 
+# Estilos visuales
 st.markdown("""
     <style>
-    .stButton button {
-        width: 100%;
-        border-radius: 8px;
-        font-weight: bold;
-        height: 3em;
-    }
+    .stButton button { width: 100%; border-radius: 8px; font-weight: bold; height: 3em; }
+    div[data-testid="stMetricValue"] { font-size: 24px; }
     </style>
 """, unsafe_allow_html=True)
 
-class MobileBlackjackAnalyzer:
-    def __init__(self, num_decks=6):
-        self.num_decks = num_decks
-        if 'deck' not in st.session_state:
-            st.session_state.deck = self._initialize_deck()
-        if 'visible_cards' not in st.session_state:
-            st.session_state.visible_cards = []
+# Inicialización de la memoria del sistema
+if 'running_count' not in st.session_state: st.session_state.running_count = 0
+if 'decks_used' not in st.session_state: st.session_state.decks_used = 0
+if 'cards_dealt' not in st.session_state: st.session_state.cards_dealt = 0
 
-    def _initialize_deck(self):
-        values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
-        single_deck = [{'value': v} for v in values for _ in range(4)]
-        return single_deck * self.num_decks
+def update_count(card_val):
+    """Actualiza el conteo Hi-Lo y el número de cartas jugadas."""
+    if card_val in ['2', '3', '4', '5', '6']: 
+        st.session_state.running_count += 1
+    elif card_val in ['10', 'J', 'Q', 'K', 'A']: 
+        st.session_state.running_count -= 1
+    
+    st.session_state.cards_dealt += 1
+    st.session_state.decks_used = st.session_state.cards_dealt / 52
 
-    def reset_shoe(self):
-        st.session_state.deck = self._initialize_deck()
-        st.session_state.visible_cards = []
+def get_recommendation(p1, p2, dealer):
+    """Matriz completa y minuciosa de Estrategia Básica Perfecta."""
+    val = lambda c: 11 if c == 'A' else (10 if c in ['J', 'Q', 'K', '10'] else int(c))
+    v1, v2, d = val(p1), val(p2), val(dealer)
+    total = v1 + v2
+    is_soft = (p1 == 'A' or p2 == 'A')
 
-    def register_card(self, value):
-        for c in st.session_state.deck:
-            if c['value'] == value:
-                st.session_state.deck.remove(c)
-                st.session_state.visible_cards.append(value)
-                break
+    # 1. Lógica de Parejas (Splits)
+    if p1 == p2:
+        if p1 in ['A', '8']: return "SPLIT (Dividir)"
+        if p1 in ['10', 'J', 'Q', 'K'] or v1 == 10: return "STAND (Plantarse)"
+        if p1 == '9': 
+            return "STAND (Plantarse)" if d in [7, 10, 11] else "SPLIT (Dividir)"
+        if p1 == '7': 
+            return "SPLIT (Dividir)" if d <= 7 else "HIT (Pedir)"
+        if p1 == '6': 
+            return "SPLIT (Dividir)" if d <= 6 else "HIT (Pedir)"
+        if p1 == '5': 
+            return "DOUBLE (Doblar)" if d <= 9 else "HIT (Pedir)"
+        if p1 == '4': 
+            return "SPLIT (Dividir)" if d in [5, 6] else "HIT (Pedir)"
+        if p1 in ['2', '3']: 
+            return "SPLIT (Dividir)" if d <= 7 else "HIT (Pedir)"
 
-    def calculate_hand_value(self, hand_values):
-        total = 0
-        aces = 0
-        for val in hand_values:
-            if val in ['J', 'Q', 'K', '10']:
-                total += 10
-            elif val == 'A':
-                aces += 1
-                total += 11
-            else:
-                total += int(val)
-        
-        while total > 21 and aces > 0:
-            total -= 10
-            aces -= 1
-        return total
+    # 2. Lógica de Manos Blandas (Soft Totals - Con un As)
+    if is_soft and p1 != p2:
+        other = v2 if p1 == 'A' else v1
+        if other >= 8: 
+            return "STAND (Plantarse)"
+        if other == 7: 
+            if d in [3, 4, 5, 6]: return "DOUBLE (Doblar)"
+            if d in [2, 7, 8]: return "STAND (Plantarse)"
+            return "HIT (Pedir)"
+        if other == 6: 
+            return "DOUBLE (Doblar)" if d in [3, 4, 5, 6] else "HIT (Pedir)"
+        if other in [4, 5]: 
+            return "DOUBLE (Doblar)" if d in [4, 5, 6] else "HIT (Pedir)"
+        if other in [2, 3]: 
+            return "DOUBLE (Doblar)" if d in [5, 6] else "HIT (Pedir)"
 
-    def bust_probability(self, current_total):
-        if current_total >= 21:
-            return 100.0 if current_total > 21 else 0.0
+    # 3. Lógica de Manos Duras (Hard Totals)
+    if not is_soft and p1 != p2:
+        if total >= 17: 
+            return "STAND (Plantarse)"
+        if total >= 13 and total <= 16: 
+            return "STAND (Plantarse)" if d <= 6 else "HIT (Pedir)"
+        if total == 12: 
+            return "STAND (Plantarse)" if d in [4, 5, 6] else "HIT (Pedir)"
+        if total == 11: 
+            return "DOUBLE (Doblar)"
+        if total == 10: 
+            return "DOUBLE (Doblar)" if d <= 9 else "HIT (Pedir)"
+        if total == 9: 
+            return "DOUBLE (Doblar)" if d in [3, 4, 5, 6] else "HIT (Pedir)"
+        if total <= 8: 
+            return "HIT (Pedir)"
+            
+    return "HIT (Pedir)"
 
-        total_cards_left = len(st.session_state.deck)
-        if total_cards_left == 0:
-            return 0.0
+# --- INTERFAZ GRÁFICA ---
 
-        cards_causing_bust = 0
-        for card in st.session_state.deck:
-            val = card['value']
-            card_val = 10 if val in ['J', 'Q', 'K', '10'] else (11 if val == 'A' else int(val))
-            if current_total + card_val > 21:
-                cards_causing_bust += 1
+st.title("🃏 Blackjack Pro Analyzer")
 
-        return round((cards_causing_bust / total_cards_left) * 100, 2)
-
-analyzer = MobileBlackjackAnalyzer()
-
-st.title("🃏 Blackjack Real-Time Analyzer")
-
-st.subheader("Registrar carta que sale en la mesa:")
-card_options = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
-
+# Panel de Registro
+st.subheader("1. Registrar Cartas de la Mesa")
 cols = st.columns(4)
-for i, card in enumerate(card_options):
-    with cols[i % 4]:
-        if st.button(card, key=f"btn_{card}_{i}"):
-            analyzer.register_card(card)
-            st.rerun()
+cards = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+for i, c in enumerate(cards):
+    if cols[i % 4].button(c, key=f"btn_{c}"):
+        update_count(c)
+        st.rerun()
 
-st.markdown("---")
+# Métricas Matemáticas
+c1, c2 = st.columns(2)
+c1.metric("Running Count (Hi-Lo)", st.session_state.running_count)
 
-st.write(f"**Cartas registradas en la mesa:** {len(st.session_state.visible_cards)}")
-if st.session_state.visible_cards:
-    st.write(", ".join(st.session_state.visible_cards))
+# Cálculo de True Count basado en 6 mazos estándar
+decks_remaining = max(1.0, 6.0 - st.session_state.decks_used)
+true_count = st.session_state.running_count / decks_remaining
+c2.metric("True Count", round(true_count, 1))
 
-if st.button("🔄 Reiniciar Zapato (Shoe)"):
-    analyzer.reset_shoe()
+if st.button("🔄 Reiniciar Zapato (6 Mazos)"):
+    st.session_state.running_count = 0
+    st.session_state.cards_dealt = 0
+    st.session_state.decks_used = 0
     st.rerun()
 
-st.markdown("---")
+st.divider()
 
-st.subheader("Tu Mano Actual")
-col1, col2 = st.columns(2)
-with col1:
-    card1 = st.selectbox("Carta 1", card_options, index=0)
-with col2:
-    card2 = st.selectbox("Carta 2", card_options, index=8)
+# Motor de Decisiones
+st.subheader("2. Analizador de Decisiones")
+p1 = st.selectbox("Tu 1ª Carta", cards, key="p1")
+p2 = st.selectbox("Tu 2ª Carta", cards, key="p2")
+dealer = st.selectbox("Carta Visible del Crupier", cards, key="d")
 
-dealer_card = st.selectbox("Carta visible del Crupier", card_options, index=8)
-
-player_total = analyzer.calculate_hand_value([card1, card2])
-bust_prob = analyzer.bust_probability(player_total)
-
-st.metric(label="Valor de tu Mano", value=player_total)
-st.metric(label="Probabilidad de Pasarte (Bust) si Pides Carta", value=f"{bust_prob}%", delta_color="inverse")
+rec = get_recommendation(p1, p2, dealer)
+st.success(f"🔥 JUGADA MATEMÁTICAMENTE PERFECTA: {rec}")
